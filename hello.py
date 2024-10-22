@@ -1,2 +1,2 @@
 msg = "Roll a dice!"
-print(msg.capitalize)
+print(msg)
