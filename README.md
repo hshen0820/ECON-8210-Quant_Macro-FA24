@@ -1,1 +1,2 @@
-# ECON-8210-Quant_Macro-FA24
+# ECON8210: Computational Methods in Economics
+## University of Pennsylvania, Fall 2024
