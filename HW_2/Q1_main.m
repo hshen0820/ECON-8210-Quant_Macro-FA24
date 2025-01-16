@@ -49,7 +49,7 @@ steady_state = [css lss kss yss]';
 % 3. Productivity Shocks (Discretized using Tauchen's Method)
 %----------------------------------------------------------------
 
-shock_num = 9;   % number of nodes for technology process Z
+shock_num = 7;   % number of nodes for technology process Z
 m = 3;            % max +- 3 std. devs.
 sigma_z =  sigma_e / sqrt(1-rho_z^2); % std. dev. of Z
 zmax=   m*sigma_z;   zmin=   -m*sigma_z;                             
@@ -104,7 +104,7 @@ theta0 = theta0(:);   % policy function fit
 
 % Solve for Chebyshev coefficients
 options = optimset('Display','Iter','TolFun',10^(-15),'TolX',10^(-15));
-coefs =  fsolve( @(theta) resid_euler_eqn(theta,p, collocation_k, nk, Z, shock_num, PI, ...
+coefs =  fsolve( @(theta) resid_euler_eqn(theta, p, collocation_k, nk, Z, shock_num, PI, ...
                                            beta, sigma, psi, alpha, delta), theta0, options );
 coefs =  reshape(coefs, p, shock_num);
 
@@ -117,9 +117,56 @@ kpf = grid_k.^alpha .* lpf.^(1-alpha) .* exp(Z) + (1-delta)*grid_k - cpf;
 
 
 % Simulations
+rng(42);
+T = 1e5;  T0 = 1e4;  T1 = T+T0;
+et = sigma_e * randn(T1,1);
+fprintf('\n Simulation.\n');
+tic;
+[kt_sim, zt_sim]= simulate_states(grid_k, Z, kpf, kss, et, rho_z, T0, T1);
+toc;
+
+% Euler equation residuals
+res = resid_euler_eqn(coefs, p, grid_k, dnk, Z, shock_num, PI, ...
+    beta, sigma, psi, alpha, delta );
+res = reshape(res, dnk, shock_num);
+
+%% 
+%===============================================================================
+%                               FIGURES
+%===============================================================================
+set(groot,'defaultAxesXGrid','on');
+set(groot,'defaultAxesYGrid','on');
+set(groot,'defaultAxesBox','on');
+
+% Policy Functions
+figure(1);
+subplot(1,3,1);
+plot(grid_k,cpf);
+xlabel('k');
+ylabel('$c$', 'Interpreter', 'latex');
+title('Consumption Decision Rule');
+subplot(1,3,2);
+plot(grid_k,lpf);
+xlabel('k');
+ylabel('$l$', 'Interpreter', 'latex');
+title('Labor Decision Rule');
+subplot(1,3,3);
+plot(grid_k,kpf);
+xlabel('k');
+ylabel('$k''$', 'Interpreter', 'latex');
+title('Capital Decision Rule');
+
+% Euler errors
+figure(2);
+plot(grid_k,res);
+xlabel('k');
+ylabel('Euler Residuals');
+title('Euler Equation Error');
 
 
 
+
+%%
 %===============================================================================
 %                               FUNCTIONS
 %===============================================================================
@@ -193,3 +240,31 @@ function res = resid_euler_eqn(theta, p, grid_k, nk, Z, shock_num, PI, ...
     res = res(:);
 
 end
+
+
+%-------------------------------------------------------------------------------
+%  Simulate States of the Economy
+%-------------------------------------------------------------------------------
+
+function [kt,zt]= simulate_states(kgrid, Z, kpf, k0, ...
+    et, rho_z, T0, T1)
+
+    [kk,zz] = ndgrid(kgrid,Z);
+    Kpf = griddedInterpolant(kk,zz,kpf);
+    zt = zeros(T1+1,1);
+    kt = zeros(T1+1,1);
+
+    % simulate state-paths
+    kt(1)= k0;
+    for t= 1:T1                                     % loop over time
+        % future productivity
+        zt(t+1) = rho_z*zt(t) + et(t);
+        % future capital: interpolate policy
+        kt(t+1) = Kpf(kt(t), zt(t));
+    end
+    
+    % burn initial draws
+    zt = zt(T0+1:T1);
+    kt = kt(T0+1:T1);
+end
+
