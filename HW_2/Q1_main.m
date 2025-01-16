@@ -87,15 +87,15 @@ p = 6;      % order-p Chebyshev polynomial
 ZC = -cos((2*(1:p)'-1) * pi / (2*p));    
 
 % Project collocation points in the K space
-grid_k = ((ZC+1)*(k_max-k_min))/2 + k_min;
+collocation_k = ((ZC+1)*(k_max-k_min))/2 + k_min;
 nk = p;  
 
 % Initial Guess for Chebyshev coefficients
-c_init = (1-alpha*beta) * grid_k.^alpha * exp(Z);
+c_init = (1-alpha*beta) * collocation_k.^alpha * exp(Z);
 theta0 = zeros(p, shock_num);
 
 for iz = 1:shock_num
-    theta0(:,iz)= fsolve( @(theta) err_cguess(theta, p, grid_k, nk, ...
+    theta0(:,iz)= fsolve( @(theta) err_cguess(theta, p, collocation_k, nk, ...
                           c_init(:,iz) ), zeros(p,1), ...
                           optimset('Display','off'));
 end
@@ -103,17 +103,20 @@ end
 theta0 = theta0(:);   % policy function fit
 
 % Solve for Chebyshev coefficients
-%%%
-%%%
-
-
-
 options = optimset('Display','Iter','TolFun',10^(-15),'TolX',10^(-15));
-coefs =  fsolve( @(theta) residuals_euler_eqn( theta,p, grid_k,nk, Z,shock_num,PI, ...
-                                           beta,sigma,psi,alpha,delta ), theta0, options );
-% get coefficients: (p,z)
+coefs =  fsolve( @(theta) resid_euler_eqn(theta,p, collocation_k, nk, Z, shock_num, PI, ...
+                                           beta, sigma, psi, alpha, delta), theta0, options );
 coefs =  reshape(coefs, p, shock_num);
 
+% Compute policy functions for {c,l,k}
+Tk = chebyshev_poly(grid_k, dnk, p);
+cpf = Tk*coefs;  
+lpf = ((1-alpha) * grid_k.^alpha * exp(Z)) ./ cpf; 
+lpf = lpf.^(1/(psi+alpha));
+kpf = grid_k.^alpha .* lpf.^(1-alpha) .* exp(Z) + (1-delta)*grid_k - cpf;  
+
+
+% Simulations
 
 
 
@@ -146,45 +149,45 @@ end
 %-------------------------------------------------------------------------------
 %  Evaluate Euler Equation Residuals
 %-------------------------------------------------------------------------------
-function res = residuals_euler_eqn(theta, p, grid_k, nk, Z, shock_num, PI, ...
+function res = resid_euler_eqn(theta, p, grid_k, nk, Z, shock_num, PI, ...
                                    beta, sigma, psi, alpha, delta)
     theta = reshape(theta, p, shock_num);
 
     % compute policy functions
-    % consumption {t}
+    % c_t
     chat = chebyshev_poly(grid_k, nk, p)*theta; 
 
-    % labor {t}
+    % l_t
     lpf = ((1-alpha) * grid_k.^alpha * exp(Z)) .* chat.^(-sigma);
     lpf = lpf.^(1/(psi+alpha));
 
-    % capital{t+1}
-    kpf = grid_k.^alpha .*lpf.^(1-alpha) .* exp(Z)  +  (1-delta)*grid_k - chat;
+    % k_{t+1}
+    kpf = grid_k.^alpha .* lpf.^(1-alpha) .* exp(Z)  +  (1-delta)*grid_k - chat;
 
-    % consumption {t+1}
+    % c_{t+1}
     Cp =  zeros(nk, shock_num);
     for iz = 1:shock_num                                    % loop over z
         T_kp = chebyshev_poly( kpf(:,iz), nk, p);    % polynomials over k'(k;z)
-        Cp(:,iz)= T_kp * theta(:,iz);                 % policy at (k'(k;z);z)
+        Cp(:,iz) = T_kp * theta(:,iz);                 % policy at (k'(k;z);z)
     end
 
 
-    % Euler equation residuals
-    res= NaN(nk, shock_num);    
-    for iz= 1:shock_num                                    % loop over z
+    % Euler eqn residuals
+    res = zeros(nk, shock_num);    
+    for iz = 1:shock_num  
 
-        % capital {t+1}
-        kp= kpf(:,iz);
+        % k_{t+1}
+        kp = kpf(:,iz);
 
-        % labor {t+1}:  l( k'(k;z), z' )
-        Lp= ( (1-alpha) * kp.^alpha * exp(Z) ) .*Cp.^(-sigma);
-        Lp= Lp.^(1/(psi+alpha));
+        % l_{t+1}
+        Lp = ( (1-alpha) * kp.^alpha * exp(Z) ) .*Cp.^(-sigma);
+        Lp = Lp.^(1/(psi+alpha));
 
-        % return on capital {t+1}
-        Rp= 1 + alpha*(kp./Lp).^(alpha-1) .*exp(Z) - delta;
+        % R_{t+1}: return on capital, net depreciation
+        Rp = 1 + alpha*(kp./Lp).^(alpha-1) .*exp(Z) - delta;
 
         % EE residuals
-        res(:,iz)=  chat(:,iz).^(-sigma)  -  beta*( Rp.* Cp.^(-sigma) )*PI(iz,:)';
+        res(:,iz) =  chat(:,iz).^(-sigma) - beta*(Rp.* Cp.^(-sigma))*PI(iz,:)';
     end
 
     res = res(:);
