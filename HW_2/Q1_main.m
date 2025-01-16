@@ -163,7 +163,11 @@ xlabel('k');
 ylabel('Euler Residuals');
 title('Euler Equation Error');
 
-
+% Distribution of Simulated Capital
+histogram(kt_sim, 'Normalization', 'probability');
+xlabel('Capital');
+ylabel('Density');
+title('Density of Capital');
 
 
 %%
