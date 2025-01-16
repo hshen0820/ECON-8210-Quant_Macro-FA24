@@ -250,24 +250,20 @@ end
 %  Simulate States of the Economy
 %-------------------------------------------------------------------------------
 
-function [kt,zt]= simulate_states(kgrid, Z, kpf, k0, ...
+function [kt,zt] = simulate_states(kgrid, Z, kpf, k0, ...
     et, rho_z, T0, T1)
 
     [kk,zz] = ndgrid(kgrid,Z);
-    Kpf = griddedInterpolant(kk,zz,kpf);
+    Kpf = griddedInterpolant(kk, zz, kpf);
     zt = zeros(T1+1,1);
     kt = zeros(T1+1,1);
 
-    % simulate state-paths
-    kt(1)= k0;
-    for t= 1:T1                                     % loop over time
-        % future productivity
+    kt(1) = k0;
+    for t = 1:T1   
         zt(t+1) = rho_z*zt(t) + et(t);
-        % future capital: interpolate policy
-        kt(t+1) = Kpf(kt(t), zt(t));
+        kt(t+1) = Kpf(kt(t), zt(t));   % interpolate policy fn to get k_{t+1}
     end
     
-    % burn initial draws
     zt = zt(T0+1:T1);
     kt = kt(T0+1:T1);
 end
