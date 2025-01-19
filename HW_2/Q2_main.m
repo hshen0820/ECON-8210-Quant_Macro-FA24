@@ -88,8 +88,6 @@ dgrid_k = linspace(k_min,k_max,dnk)';    % dense capital grid
 % 4. Finite Elements Method using Galerkin Weights
 %----------------------------------------------------------------
 
-options = optimset('Display','Iter','TolFun',1e-15,'TolX',1e-15);
-
 % Quadrature for capital
 nq = 10;        
 xg = zeros(nq, n-1);   % nodes
@@ -101,7 +99,20 @@ end
 
 %% q2_fixed.m, line 89
 
+options = optimset('Display','Iter','TolFun',1e-15,'TolX',1e-15);
 
+fprintf('\n Guessing initial coefficients.\n');
+tic;
+ths = coeff_guess(grid_k, nk, Z,shock_num, PI, ...
+    beta, eta, alpha, delta, guess, options);
+th0 = ths(:);
+toc;
+
+
+
+
+
+fprintf('\n Solving Finite Elements.\n');
 
 
 
@@ -147,5 +158,53 @@ end
 
 
 %-------------------------------------------------------------------------------
-%  Evaluate
+%  Guess Coefficients
 %-------------------------------------------------------------------------------
+function [theta]= coeff_guess(grid_k, nk, Z, shock_num, PI, ...
+    beta, eta, alpha, delta, guess, opt)
+
+    % initial guess: deterministic model w/o labor
+    c0 = (1 - alpha*beta) * grid_k.^alpha * exp(Z);
+    theta = c0(:);
+
+    % refine guess: collocation with B1-splines
+    if (guess == 1)
+        th = fsolve(@(theta) err_B1_collocation(theta,grid_k,nk,Z,shock_num,PI), ...
+            theta, opt);
+        theta = reshape(th, nk, shock_num);
+    end
+    
+    % collocation residuals
+    function [res, Chat, L, Kp] = err_B1_collocation(theta,grid_k,nk,Z,shock_num,PI)
+        theta = reshape(theta, nk, shock_num);
+    
+        % c_{t}
+        Chat = theta;    
+        % l_{t}
+        L = ( (1-alpha) * grid_k.^alpha * exp(Z) ) ./ Chat;
+        L = L.^(1/(eta+alpha));
+        % k_{t+1}
+        Kp = grid_k.^alpha.*L.^(1-alpha).*exp(Z) + (1-delta)*grid_k - Chat;
+    
+        %  compute residuals
+        Res = ones(nk,shock_num);
+        for iz = 1:shock_num
+            % current variables over (k,z) grid
+            c = Chat(:,iz);        % c_{t}
+            kp = Kp(:,iz);         % k_{t+1}
+            
+            % future variables over (k'(k;z),z') grid
+            % c_{t+1}
+            Cp = interp1( grid_k,Chat, kp, 'linear','extrap');
+            % l_{t+1}
+            Lp = ( (1-alpha) *kp.^alpha *exp(Z) )./Cp;
+            Lp = Lp.^(1/(eta+alpha));
+            % rtn on capital {t+1}
+            Rp = 1 + alpha*(kp./Lp).^(alpha-1) .*exp(Z) - delta;
+        
+            % Euler eqn error
+            Res(:,iz) = 1 - beta* c.*(Rp./Cp)*PI(iz,:)';
+        end
+        res= Res(:); % vectorize
+    end
+end
