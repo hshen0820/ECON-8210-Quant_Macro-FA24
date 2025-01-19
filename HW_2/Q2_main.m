@@ -97,9 +97,9 @@ for i = 1:n-1
     [xg(:,i),wg(:,i)]= gaussLegendre_quadrature(grid_k(i),grid_k(i+1));
 end
 
-
 options = optimset('Display','Iter','TolFun',1e-15,'TolX',1e-15);
 
+% Refined guess for coefficients
 fprintf('\n Guessing initial coefficients.\n');
 tic;
 ths = coeff_guess(grid_k, nk, Z,shock_num, PI, ...
@@ -107,7 +107,7 @@ ths = coeff_guess(grid_k, nk, Z,shock_num, PI, ...
 th0 = ths(:);
 toc;
 
-
+% Solve FE
 fprintf('\n Solving Finite Elements.\n');
 tic;
 ths = fsolve(@(theta) res_FE(theta, n, xg, wg, nq, grid_k, nk, Z, shock_num, PI, ...
@@ -120,7 +120,24 @@ cpf = tent_basis(dgrid_k, dnk, grid_k, n) * theta;
 lpf = (((1-alpha)*dgrid_k.^alpha *exp(Z)) ./ cpf) .^ (1/(eta+alpha));
 kpf = dgrid_k.^alpha .*lpf.^(1-alpha).*exp(Z) + (1-delta)*dgrid_k - cpf;
 
+% Euler equation residuals
+resid = ones(dnk, shock_num);
 
+for iz = 1:shock_num
+    % current variables over (k,z) grid
+    c = cpf(:,iz);     % c_{t}
+    kp = kpf(:,iz);    % k_{t+1}   
+    
+    % future variables over (k'(k;z),z') grid
+    
+    Cp = tent_basis(kp, dnk, grid_k, n) * theta;     % c_{t+1}
+    Lp = ((1-alpha) *kp.^alpha *exp(Z))./Cp;         % l_{t+1}
+    Lp =  Lp.^(1/(eta+alpha));
+    Rp = 1 + alpha*(kp./Lp).^(alpha-1).*exp(Z) - delta;  % R_{t+1}
+
+    resid(:,iz)=  1 - beta*c.*(Rp./Cp)*PI(iz,:)';
+
+end
 
 
 
@@ -132,8 +149,31 @@ set(groot,'defaultAxesXGrid','on');
 set(groot,'defaultAxesYGrid','on');
 set(groot,'defaultAxesBox','on');
 
+% Policy Functions
+figure(1);
+subplot(1,3,1);
+plot(dgrid_k,cpf);
+xlabel('k');
+ylabel('$c$', 'Interpreter', 'latex');
+title('Consumption Decision Rule');
+subplot(1,3,2);
+plot(dgrid_k,lpf);
+xlabel('k');
+ylabel('$l$', 'Interpreter', 'latex');
+title('Labor Decision Rule');
+subplot(1,3,3);
+plot(dgrid_k,kpf);
+xlabel('k');
+ylabel('$k''$', 'Interpreter', 'latex');
+title('Capital Decision Rule');
+% sgtitle('Finite Elements (Tents + Galerkin)');
 
-
+% Euler equation rrors
+figure(2);
+plot(dgrid_k, resid);
+xlabel('k');
+ylabel('Euler Residuals');
+title('Euler Equation Error (Finite Elements)');
 
 
 
@@ -263,9 +303,6 @@ function err = res_FE(theta, n, xg, wg, nq, grid_k, nk, Z,shock_num, PI, ...
 end
 
 
-%-------------------------------------------------------------------------------
-%  [function]  tent basis
-%-------------------------------------------------------------------------------
 function [psi_hat] = tent_basis(xg, nx, grid_k, n)
 
     psi_hat= zeros(nx,n);
