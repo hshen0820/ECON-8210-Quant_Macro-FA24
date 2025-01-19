@@ -97,7 +97,6 @@ for i = 1:n-1
     [xg(:,i),wg(:,i)]= gaussLegendre_quadrature(grid_k(i),grid_k(i+1));
 end
 
-%% q2_fixed.m, line 89
 
 options = optimset('Display','Iter','TolFun',1e-15,'TolX',1e-15);
 
@@ -109,11 +108,17 @@ th0 = ths(:);
 toc;
 
 
-
-
-
 fprintf('\n Solving Finite Elements.\n');
+tic;
+ths = fsolve(@(theta) res_FE(theta, n, xg, wg, nq, grid_k, nk, Z, shock_num, PI, ...
+    beta, eta, alpha, delta), th0, options);
+toc;
 
+% store coefficients and policy functions
+theta = reshape(ths, nk, shock_num);
+cpf = tent_basis(dgrid_k, dnk, grid_k, n) * theta;
+lpf = (((1-alpha)*dgrid_k.^alpha *exp(Z)) ./ cpf) .^ (1/(eta+alpha));
+kpf = dgrid_k.^alpha .*lpf.^(1-alpha).*exp(Z) + (1-delta)*dgrid_k - cpf;
 
 
 
@@ -206,5 +211,80 @@ function [theta]= coeff_guess(grid_k, nk, Z, shock_num, PI, ...
             Res(:,iz) = 1 - beta* c.*(Rp./Cp)*PI(iz,:)';
         end
         res= Res(:); % vectorize
+    end
+end
+
+
+%-------------------------------------------------------------------------------
+%  Solve Finite elements (Tent basis + Galerkin weighting)
+%-------------------------------------------------------------------------------
+function err = res_FE(theta, n, xg, wg, nq, grid_k, nk, Z,shock_num, PI, ...
+    beta,eta,alpha,delta )
+
+    theta=  reshape(theta, nk, shock_num);
+    k = xg(:);           % sub-interval nodes
+    w = wg(:);           % sub-interval weights
+    nq = nq*(n-1);       % number of nodes
+
+    % c_{t}
+    psi_q = tent_basis(k, nq, grid_k, n);      % basis over quadrature nodes
+    Chat = psi_q* theta;                       % policy func
+    % l_{t}
+    L = ((1-alpha)*k.^alpha*exp(Z)) ./ Chat;
+    L = L.^(1/(eta+alpha));
+    % k_{t+1}
+    Kp = k.^alpha.*L.^(1-alpha).*exp(Z) + (1-delta)*k - Chat;
+
+    %  Compute residuals
+    Res = ones(n, shock_num);
+    
+    for iz = 1:shock_num
+        % current variables over (k,z) grid
+        c = Chat(:,iz);        % c_{t}
+        kp = Kp(:,iz);         % k_{t+1}
+        
+        % future variables over (k'(k;z),z') grid
+        % c_{t+1}
+        Cp = tent_basis(kp, nq, grid_k, n)*theta;
+        % l_{t+1}
+        Lp = ((1-alpha) *kp.^alpha *exp(Z))./Cp;
+        Lp = Lp.^(1/(eta+alpha));
+        % rtn on capital {t+1}
+        Rp = 1 + alpha*(kp./Lp).^(alpha-1) .*exp(Z) - delta;
+    
+        % Euler eqn error
+        res = 1 - beta*c.*(Rp./Cp)*PI(iz,:)';
+        % residual function
+        res_i = psi_q .* res;                % Galerkin weighting
+        Res(:,iz) = sum(res_i .* w)';      % integrate over capital
+    end
+
+    err = Res(:);
+end
+
+
+%-------------------------------------------------------------------------------
+%  [function]  tent basis
+%-------------------------------------------------------------------------------
+function [psi_hat] = tent_basis(xg, nx, grid_k, n)
+
+    psi_hat= zeros(nx,n);
+
+    % compute basis elements over x-grid
+    for i = 1:n         
+        if (i == 1)
+            k2 = grid_k(i+1);  k1 = grid_k(i);
+            ii = (xg<=k2);
+            psi_hat(:,i) = (k2-xg)/(k2-k1).*ii;
+        elseif (i < n)
+            k2= grid_k(i+1);  k1= grid_k(i);  k0= grid_k(i-1);
+            ii1 = (xg>k0).*(xg<=k1);
+            ii2 = (xg>k1).*(xg<=k2);   
+            psi_hat(:,i) = (xg-k0)/(k1-k0).*ii1 + (k2-xg)/(k2-k1).*ii2;
+        else
+            k1 = grid_k(i);  k0 = grid_k(i-1);
+            ii1 = (xg>k0);
+            psi_hat(:,i) = (xg-k0)/(k1-k0).*ii1;
+        end
     end
 end
