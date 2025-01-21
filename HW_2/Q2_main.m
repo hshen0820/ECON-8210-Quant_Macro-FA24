@@ -103,7 +103,7 @@ options = optimset('Display','Iter','TolFun',1e-15,'TolX',1e-15);
 fprintf('\n Guessing initial coefficients.\n');
 tic;
 ths = coeff_guess(grid_k, nk, Z,shock_num, PI, ...
-    beta, eta, alpha, delta, guess, options);
+    beta, psi, alpha, delta, guess, options);
 th0 = ths(:);
 toc;
 
@@ -111,7 +111,7 @@ toc;
 fprintf('\n Solving Finite Elements.\n');
 tic;
 ths = fsolve(@(theta) res_FE(theta, n, xg, wg, nq, grid_k, nk, Z, shock_num, PI, ...
-    beta, eta, alpha, delta), th0, options);
+    beta, psi, alpha, delta), th0, options);
 toc;
 
 % store coefficients and policy functions
@@ -132,7 +132,7 @@ for iz = 1:shock_num
     
     Cp = tent_basis(kp, dnk, grid_k, n) * theta;     % c_{t+1}
     Lp = ((1-alpha) *kp.^alpha *exp(Z))./Cp;         % l_{t+1}
-    Lp =  Lp.^(1/(eta+alpha));
+    Lp =  Lp.^(1/(psi+alpha));
     Rp = 1 + alpha*(kp./Lp).^(alpha-1).*exp(Z) - delta;  % R_{t+1}
 
     resid(:,iz)=  1 - beta*c.*(Rp./Cp)*PI(iz,:)';
@@ -206,7 +206,7 @@ end
 %  Guess Coefficients
 %-------------------------------------------------------------------------------
 function [theta]= coeff_guess(grid_k, nk, Z, shock_num, PI, ...
-    beta, eta, alpha, delta, guess, opt)
+    beta, psi, alpha, delta, guess, opt)
 
     % initial guess: deterministic model w/o labor
     c0 = (1 - alpha*beta) * grid_k.^alpha * exp(Z);
@@ -227,7 +227,7 @@ function [theta]= coeff_guess(grid_k, nk, Z, shock_num, PI, ...
         Chat = theta;    
         % l_{t}
         L = ( (1-alpha) * grid_k.^alpha * exp(Z) ) ./ Chat;
-        L = L.^(1/(eta+alpha));
+        L = L.^(1/(psi+alpha));
         % k_{t+1}
         Kp = grid_k.^alpha.*L.^(1-alpha).*exp(Z) + (1-delta)*grid_k - Chat;
     
@@ -243,7 +243,7 @@ function [theta]= coeff_guess(grid_k, nk, Z, shock_num, PI, ...
             Cp = interp1( grid_k,Chat, kp, 'linear','extrap');
             % l_{t+1}
             Lp = ( (1-alpha) *kp.^alpha *exp(Z) )./Cp;
-            Lp = Lp.^(1/(eta+alpha));
+            Lp = Lp.^(1/(psi+alpha));
             % rtn on capital {t+1}
             Rp = 1 + alpha*(kp./Lp).^(alpha-1) .*exp(Z) - delta;
         
